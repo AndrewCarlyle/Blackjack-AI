@@ -1,17 +1,7 @@
 #This file contains the AI portion of my final project
 
-import random
-
 #List of all opposing players within the game and their cards. '?' = face down card
 plrList = []
-
-qEstimates = {}
-
-gamma = 0.9
-alpha = 0.2
-
-for i in range(2, 32):
-    qEstimates[i] = {}
 
 #Representation of the deck as the AI sees it. (It may know that there are some missing cards, but not which cards)
 deck = []
@@ -24,80 +14,81 @@ def resetDeck():
             else:
                 deck.append(i)
 
-def getMax(total, predVal):
-    if not predVal in qEstimates[total]:
-        return 0
-    elif total > 21:
-        return qEstimates[total][predVal][1]
-    elif qEstimates[total][predVal][0] > qEstimates[total][predVal][1]:
-        return qEstimates[total][predVal][0]
-    else:
-        return qEstimates[total][predVal][1]
-
-def bestDecision():
-    currSums = getCurrSums()
-
-    #Unknown card prediction - an estimate of the value of the face down card
-    ucPred = calculateUnknownCard()
-
-    roundedPred = round(ucPred * 2) / 2
-
-    if not roundedPred in qEstimates[currSums[0]]:
-        if currSums[0] > 16:
-            return False
-        else:
-            return True
-    elif qEstimates[currSums[0]][roundedPred][0] > qEstimates[currSums[0]][roundedPred][1]:
-        return True
-    else:
-        return False
-
 #This function returns the decision to either hit (true) or stand (false)
+#myCards - a list of all the cards that the AI has
+#computerCards - a list where each element is a list, and each list has
+#the value of the computer's face up cards, and the face down card represented
+#by a -1
+#deck - a list of cards currently in the deck
 def makeDecision():
     currSums = getCurrSums()
 
+    predSums = []
+
     #Unknown card prediction - an estimate of the value of the face down card
     ucPred = calculateUnknownCard()
 
-    roundedPred = round(ucPred * 2) / 2
+    #This will happen very rarely but, if we know that all CPU's have busted (exluding their hidden card)
+    #then we can stand
+    cpuBust = True
 
-    #Setting the inital Q-values for this state
-    if not roundedPred in qEstimates[currSums[0]]:
-        if currSums[0] < 11:
-            qEstimates[currSums[0]][roundedPred] = [1,0]
-        elif currSums[0] > 21:
-            qEstimates[currSums[0]][roundedPred] = [-1,0]
+    cpuSums = currSums[1:len(currSums)]
+
+    for sum in cpuSums:
+        predSums.append(sum + ucPred)
+
+        if sum < 22:
+            cpuBust = False
+
+    #Standing if all other players have busted
+    if cpuBust:
+        return False
+
+    #Calculating the probability that the next card will cause the AI to bust
+    bustTotal = 0
+
+    for card in deck:
+        if card + currSums[0] > 21:
+            bustTotal += 1
+
+    bustProbability = bustTotal / len(deck)
+
+    if bustProbability > 0.75:
+        return False
+
+    #This value is higher than 21 since the average value of the cards in the deck is skewed by the cards worth 10
+    if currSums[0] + ucPred <= 23:
+        return True
+
+    return False
+    decision = False
+
+    #This is a list instead of a single value so that we can allow for situations where we have an ace
+    myTotal = [0,0]
+
+    for card in myCards:
+        myTotal[0] += card
+
+        if card == 1 and myTotal < 11:
+            myTotal[1] += 11
         else:
-            qEstimates[currSums[0]][roundedPred] = [0,0]
+            myTotal[1] += 1
 
-    exploreChance = random.randint(1,10)
+    lowAceTotal = 0
+    highAceTotal = 0
 
-    predTotalAfterHit = round(currSums[0] + ucPred)
+    for i in deck:
+        lowAceTotal += i
 
-    if exploreChance == 1:
-        qEstimates[currSums[0]][roundedPred][0] += alpha * (0 + gamma * getMax(predTotalAfterHit, roundedPred) - qEstimates[currSums[0]][roundedPred][0])
-        return True
-    elif exploreChance == 2:
-        qEstimates[currSums[0]][roundedPred][1] += alpha * (0 + gamma * getMax(currSums[0], roundedPred) - qEstimates[currSums[0]][roundedPred][1])
-        return False
-    elif qEstimates[currSums[0]][roundedPred][0] <= qEstimates[currSums[0]][roundedPred][1]:
-        qEstimates[currSums[0]][roundedPred][1] += alpha * (0 + gamma * getMax(currSums[0], roundedPred) - qEstimates[currSums[0]][roundedPred][1])
-        return False
-    else:
-        qEstimates[currSums[0]][roundedPred][0] += alpha * (0 + gamma * getMax(predTotalAfterHit, roundedPred) - qEstimates[currSums[0]][roundedPred][0])
-        return True
+        if i == 1:
+            highAceTotal += 11
+        else:
+            highAceTotal += i
 
-#Updating the Q-value at the end of a round
-def updateQValue(state, reward, action):
-    ucPred = round(calculateUnknownCard() * 2) / 2
+    lowAceExpected = lowAceTotal / len(deck)
+    highAceExpected = highAceTotal / len(deck)
 
-    if not ucPred in qEstimates[state]:
-        qEstimates[state][ucPred] = [0, 0]
-
-    if action == 1:
-        qEstimates[state][ucPred][action] += alpha * (reward + gamma * qEstimates[state][ucPred][action] - qEstimates[state][ucPred][action])
-    else:    
-        qEstimates[state][ucPred][action] += alpha * (reward + gamma * getMax(state, ucPred) - qEstimates[state][ucPred][action])
+    return decision
 
 def startGame(numPlayers):
     for i in range(numPlayers):
@@ -131,7 +122,7 @@ def expectedVal():
             highAceSum += 11
         else:
             highAceSum += card
-        
+
         sum += card
 
     return (sum / len(deck), highAceSum / len(deck))
